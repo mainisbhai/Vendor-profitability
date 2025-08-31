@@ -1,0 +1,35 @@
+-- This SQL statement creates the final table that will hold the aggregated data
+-- from sales, purchases, and freight tables, joined together.
+-- It defines the schema for the vendor_sales_summary table.
+
+CREATE TABLE vendor_sales_summary AS
+-- The rest of the data will be inserted by the complex join query.
+-- The SELECT statement below is just to define the columns.
+SELECT
+    s.Vendor_Name,
+    s.Description,
+    s.Bottle_Size,
+    s.Bottle_Cost,
+    s.Bottle_Retail,
+    ps.Total_Purchase_Quantity,
+    ps.Total_Purchase_Dollars,
+    ss.Total_Sales_Quantity,
+    ss.Total_Sales_Dollars,
+    fs.Total_Freight_Dollars
+FROM
+    sales s
+LEFT JOIN
+    purchase_summary ps ON s.Invoice_No = ps.Invoice_No AND s.Item_No = ps.Item_No
+LEFT JOIN
+    sales_summary ss ON s.Invoice_No = ss.Invoice_No AND s.Item_No = ss.Item_No
+LEFT JOIN
+    freight_summary fs ON s.Invoice_No = fs.Invoice_No;
+
+-- Note: In the video, this table is created and then populated.
+-- The above is a simplified representation. A more robust approach would be:
+-- CREATE TABLE vendor_sales_summary (
+--     Vendor_Name TEXT,
+--     Description TEXT,
+--     Bottle_Size REAL,
+--     ... and so on for all columns with their types
+-- );
