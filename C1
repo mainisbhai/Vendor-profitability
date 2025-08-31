@@ -1,0 +1,80 @@
+import pandas as pd
+import os
+from sqlalchemy import create_engine
+import logging
+import time
+
+# --- Configure Logging ---
+# Sets up a logging file to record the script's execution, errors, and progress.
+# 'filemode='a'' means it will append to the log file, not overwrite it.
+logging.basicConfig(
+    filename='logs/ingestion_db.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filemode='a'
+)
+
+# --- Database Engine ---
+# Creates a connection engine to an SQLite database file named 'inventory.db'.
+# SQLite is a serverless database, perfect for local projects.
+try:
+    engine = create_engine('sqlite:///inventory.db')
+    logging.info("Database engine created successfully.")
+except Exception as e:
+    logging.error(f"Error creating database engine: {e}")
+    exit() # Exit the script if the database connection fails
+
+def ingest_db(df, table_name, engine):
+    """
+    Ingests a pandas DataFrame into a specified table in the database.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to ingest.
+        table_name (str): The name of the table to create/replace.
+        engine: The SQLAlchemy engine for the database connection.
+    """
+    try:
+        # 'to_sql' is a powerful pandas function to write records stored in a DataFrame to a SQL database.
+        # 'if_exists='replace'' will drop the table first if it exists and create a new one.
+        # 'index=False' means we don't write the DataFrame's index as a column in the SQL table.
+        df.to_sql(table_name, con=engine, if_exists='replace', index=False)
+        logging.info(f"Successfully ingested data into table: {table_name}")
+    except Exception as e:
+        logging.error(f"Error ingesting data for table {table_name}: {e}")
+
+def load_raw_data():
+    """
+    Loads all CSV files from the 'data' directory into the SQLite database.
+    """
+    start_time = time.time()
+    logging.info("Starting raw data ingestion process.")
+
+    data_dir = 'data'
+    # Check if the data directory exists
+    if not os.path.isdir(data_dir):
+        logging.error(f"Data directory '{data_dir}' not found.")
+        return
+
+    # Loop through each file in the 'data' directory
+    for file in os.listdir(data_dir):
+        if file.endswith('.csv'):
+            file_path = os.path.join(data_dir, file)
+            try:
+                df = pd.read_csv(file_path)
+                # The table name is derived from the CSV filename without the '.csv' extension.
+                table_name = os.path.splitext(file)[0]
+                logging.info(f"Reading {file} and preparing to ingest into table '{table_name}'.")
+                ingest_db(df, table_name, engine)
+            except Exception as e:
+                logging.error(f"Failed to process or ingest file {file}: {e}")
+
+    end_time = time.time()
+    # Calculate total time in minutes
+    total_time_minutes = (end_time - start_time) / 60
+    logging.info(f"Ingestion Complete. Total time taken: {total_time_minutes:.2f} minutes.")
+
+
+# --- Main Execution Block ---
+# This ensures the 'load_raw_data' function runs only when the script is executed directly.
+if __name__ == '__main__':
+    load_raw_data()
