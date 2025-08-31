@@ -1,0 +1,115 @@
+import pandas as pd
+import sqlite3
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+# --- Connect to the Database ---
+try:
+    conn = sqlite3.connect('inventory.db')
+    print("Database connection successful.")
+except Exception as e:
+    print(f"Database connection failed: {e}")
+    exit()
+
+# --- Load Data from Database ---
+# Load the pre-aggregated vendor summary table into a pandas DataFrame.
+df = pd.read_sql_query('SELECT * FROM vendor_sales_summary', conn)
+print("Data loaded successfully.")
+
+# --- Data Cleaning and Feature Engineering ---
+
+# Convert data types
+df['Volume'] = df['Volume'].astype(float)
+
+# Fill missing values with 0 for key financial columns
+df[['Sales_Quantity', 'Sales_Dollar', 'Profit_Margin', 'Gross_Profit']] = df[['Sales_Quantity', 'Sales_Dollar', 'Profit_Margin', 'Gross_Profit']].fillna(0)
+
+# Strip any leading/trailing whitespace from string columns
+df['Vendor_Name'] = df['Vendor_Name'].str.strip()
+df['Description'] = df['Description'].str.strip()
+
+
+# --- Create New Features ---
+print("Performing feature engineering...")
+# Calculate Gross Profit
+df['Gross_Profit'] = df['Total_Sales_Dollars'] - df['Total_Purchase_Dollars']
+
+# Calculate Profit Margin, handling potential division by zero
+df['Profit_Margin'] = (df['Gross_Profit'] / df['Total_Sales_Dollars']).replace([float('inf'), -float('inf')], 0) * 100
+
+# Calculate Stock Turnover
+df['Stock_Turnover'] = (df['Total_Sales_Quantity'] / df['Total_Purchase_Quantity']).replace([float('inf'), -float('inf')], 0)
+
+# Calculate Unit Purchase Price
+df['Unit_Purchase_Price'] = (df['Total_Purchase_Dollars'] / df['Total_Purchase_Quantity']).replace([float('inf'), -float('inf')], 0)
+
+# --- Filter Data for Analysis ---
+# Apply business logic to filter out noise and inconsistent data
+df_filtered = df[
+    (df['Gross_Profit'] > 0) &
+    (df['Profit_Margin'] > 0) &
+    (df['Total_Sales_Quantity'] > 0)
+].copy()
+
+print(f"Original records: {len(df)}, Filtered records: {len(df_filtered)}")
+
+# --- Brand Performance Analysis ---
+# Identify target brands that have low sales but high profit margins
+print("Analyzing brand performance...")
+brand_performance = df_filtered.groupby('Description').agg(
+    Total_Sales_Dollars=('Total_Sales_Dollars', 'sum'),
+    Profit_Margin=('Profit_Margin', 'mean')
+).reset_index()
+
+# Set thresholds using quantiles
+low_sales_threshold = brand_performance['Total_Sales_Dollars'].quantile(0.15)
+high_margin_threshold = brand_performance['Profit_Margin'].quantile(0.85)
+
+target_brands = brand_performance[
+    (brand_performance['Total_Sales_Dollars'] < low_sales_threshold) &
+    (brand_performance['Profit_Margin'] > high_margin_threshold)
+]
+print("Potential target brands for promotion:")
+print(target_brands)
+
+
+# --- Vendor Procurement Analysis (Pareto Principle) ---
+print("\nAnalyzing vendor procurement...")
+vendor_performance = df_filtered.groupby('Vendor_Name').agg(
+    Total_Purchase_Dollars=('Total_Purchase_Dollars', 'sum')
+).reset_index()
+
+# Calculate purchase contribution percentage
+total_purchases = vendor_performance['Total_Purchase_Dollars'].sum()
+vendor_performance['Purchase_Contribution_Percent'] = (vendor_performance['Total_Purchase_Dollars'] / total_purchases) * 100
+
+# Sort and calculate cumulative contribution
+vendor_performance.sort_values(by='Purchase_Contribution_Percent', ascending=False, inplace=True)
+vendor_performance['Cumulative_Contribution'] = vendor_performance['Purchase_Contribution_Percent'].cumsum()
+
+print("Top vendors by purchase contribution:")
+print(vendor_performance.head(10))
+
+# --- Hypothesis Testing ---
+# Test if there is a significant difference in profit margins between top and low-performing vendors.
+print("\nPerforming hypothesis test...")
+profit_margin_threshold = df_filtered['Profit_Margin'].quantile(0.75)
+top_vendors = df_filtered[df_filtered['Profit_Margin'] >= profit_margin_threshold]
+low_vendors = df_filtered[df_filtered['Profit_Margin'] < profit_margin_threshold]
+
+# Perform independent t-test
+t_stat, p_value = stats.ttest_ind(top_vendors['Profit_Margin'], low_vendors['Profit_Margin'])
+
+print(f"T-statistic: {t_stat:.4f}")
+print(f"P-value: {p_value:.4f}")
+
+if p_value < 0.05:
+    print("The difference in profit margins is statistically significant (p < 0.05).")
+else:
+    print("The difference in profit margins is not statistically significant (p >= 0.05).")
+
+
+# --- Close Database Connection ---
+conn.close()
+print("\nAnalysis complete. Database connection closed.")
