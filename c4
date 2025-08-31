@@ -1,0 +1,63 @@
+-- This query uses Common Table Expressions (CTEs) to first aggregate data
+-- from the purchase, sales, and freight tables, and then joins them
+-- to create the final vendor_sales_summary dataset.
+
+-- CTE for Purchase Summary
+WITH purchase_summary AS (
+    SELECT
+        "Invoice_No",
+        "Item_No",
+        SUM("Purchase_Quantity") AS Total_Purchase_Quantity,
+        SUM("Purchase_Dollars") AS Total_Purchase_Dollars
+    FROM
+        purchase
+    GROUP BY
+        "Invoice_No",
+        "Item_No"
+),
+
+-- CTE for Sales Summary
+sales_summary AS (
+    SELECT
+        "Invoice_No",
+        "Item_No",
+        SUM("Sales_Quantity") AS Total_Sales_Quantity,
+        SUM("Sales_Dollars") AS Total_Sales_Dollars
+    FROM
+        sales
+    GROUP BY
+        "Invoice_No",
+        "Item_No"
+),
+
+-- CTE for Freight Summary
+freight_summary AS (
+    SELECT
+        "Invoice_No",
+        SUM("Freight_Dollars") AS Total_Freight_Dollars
+    FROM
+        freight
+    GROUP BY
+        "Invoice_No"
+)
+
+-- Final SELECT statement to join the CTEs
+SELECT
+    s.Vendor_Name,
+    s.Description,
+    s.Bottle_Size,
+    s.Bottle_Cost,
+    s.Bottle_Retail,
+    ps.Total_Purchase_Quantity,
+    ps.Total_Purchase_Dollars,
+    ss.Total_Sales_Quantity,
+    ss.Total_Sales_Dollars,
+    fs.Total_Freight_Dollars
+FROM
+    sales s -- Using the main sales table as the base
+LEFT JOIN
+    purchase_summary ps ON s."Invoice_No" = ps."Invoice_No" AND s."Item_No" = ps."Item_No"
+LEFT JOIN
+    sales_summary ss ON s."Invoice_No" = ss."Invoice_No" AND s."Item_No" = ss."Item_No"
+LEFT JOIN
+    freight_summary fs ON s."Invoice_No" = fs."Invoice_No";
